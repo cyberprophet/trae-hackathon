@@ -56,6 +56,7 @@ export default function Home() {
   const [genProgress, setGenProgress] = useState({ current: 0, total: 0 });
   const [storyTitle, setStoryTitle] = useState("");
   const [sessionId, setSessionId] = useState("");
+  const [isGeneratingMore, setIsGeneratingMore] = useState(false);
 
   // Story input state (lifted here so it persists across phases)
   const [story, setStory] = useState("");
@@ -90,9 +91,9 @@ export default function Home() {
   const pendingFormRef = useRef<FormData | null>(null);
 
   const handleGenerate = () => {
-    if (!story.trim()) return;
+    if (!story.trim() && selfieFile.length === 0) return;
     const formData = new FormData();
-    formData.append("story", story.trim());
+    formData.append("story", story.trim() || "상품 사진 촬영");
     if (selectedStyle) formData.append("style", selectedStyle.id);
     selfieFile.forEach((f) => formData.append("photos", f));
     pendingFormRef.current = formData;
@@ -147,7 +148,9 @@ export default function Home() {
             addMsg?.(event.name, "tool-result", { name: event.name, status: event.status, preview: event.preview ?? {} });
           } else if (event.type === "character") {
             setCharacterDescription(event.face_description ?? "");
-            setCharacterImage(event.face_ref_image ?? "");
+            let refImg = event.face_ref_image ?? "";
+            if (refImg && refImg.startsWith("/")) refImg = `${BACKEND}${refImg}`;
+            setCharacterImage(refImg);
             addMsg?.("Product photos analyzed", "progress");
           } else if (event.type === "storyboard") {
             setStoryTitle(event.title ?? "");
@@ -186,6 +189,10 @@ export default function Home() {
             });
           } else if (event.type === "panel") {
             const p = event.panel as Panel;
+            // Prefix backend URL for relative image paths
+            if (p.image_url && p.image_url.startsWith("/")) {
+              p.image_url = `${BACKEND}${p.image_url}`;
+            }
             setPanels((prev) =>
               prev.map((x) =>
                 x.panel_number === p.panel_number ? { ...p, status: "done" as const } : x
@@ -214,8 +221,9 @@ export default function Home() {
           }
         }
       }
-    } catch {
-      // Keep whatever panels we have
+    } catch (err) {
+      console.error("SSE stream error:", err);
+      addMsg?.(`생성 중 오류 발생: ${err}`, "sys");
     }
 
     setIsGenerating(false);
@@ -255,6 +263,9 @@ export default function Home() {
       const data = await res.json();
 
       let newUrl = data.image_url || "";
+      if (newUrl && newUrl.startsWith("/")) {
+        newUrl = `${BACKEND}${newUrl}`;
+      }
       if (newUrl && !newUrl.startsWith("data:")) {
         newUrl += (newUrl.includes("?") ? "&" : "?") + `t=${Date.now()}`;
       }
@@ -275,11 +286,65 @@ export default function Home() {
     }
   };
 
+  const handleGenerateMore = async () => {
+    if (!sessionId || isGeneratingMore) return;
+    const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
+    setIsGeneratingMore(true);
+
+    // Add 4 placeholder panels
+    const existingCount = panels.length;
+    const placeholders: Panel[] = Array.from({ length: 4 }, (_, i) => ({
+      panel_number: existingCount + 1 + i,
+      image_url: "",
+      dialogue: [],
+      narration: "",
+      image_prompt: "",
+      status: "gen" as const,
+    }));
+    setPanels((prev) => [...prev, ...placeholders]);
+
+    try {
+      const res = await fetch(`${BACKEND}/generate/more`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: sessionId,
+          story: story,
+          style: selectedStyle?.id ?? "studio",
+          face_description: characterDescription,
+          count: 4,
+          existing_count: existingCount,
+        }),
+      });
+      const data = await res.json();
+      const newPanels = (data.panels ?? []) as Panel[];
+
+      // Prefix backend URL and mark as done
+      for (const p of newPanels) {
+        if (p.image_url && p.image_url.startsWith("/")) {
+          p.image_url = `${BACKEND}${p.image_url}`;
+        }
+      }
+
+      setPanels((prev) => {
+        // Replace placeholders with real panels
+        const existing = prev.slice(0, existingCount);
+        const done = newPanels.map((p) => ({ ...p, status: "done" as const }));
+        return [...existing, ...done];
+      });
+    } catch {
+      // Remove placeholders on error
+      setPanels((prev) => prev.slice(0, existingCount));
+    }
+    setIsGeneratingMore(false);
+  };
+
   const handleReset = () => {
     setPhase(0);
     setSelectedStyle(null);
     setPanels([]);
     setIsGenerating(false);
+    setIsGeneratingMore(false);
     setCharacterDescription("");
     setCharacterImage("");
     setSelectedPanels([]);
@@ -453,7 +518,7 @@ export default function Home() {
             {/* Generate button */}
             <button
               className="btn-cta btn-cta-primary"
-              disabled={!story.trim()}
+              disabled={!story.trim() && selfieFile.length === 0}
               onClick={handleGenerate}
             >
               Generate Shots
@@ -480,8 +545,10 @@ export default function Home() {
             <PhotoViewer
               panels={panels}
               isGenerating={isGenerating}
+              isGeneratingMore={isGeneratingMore}
               selectedPanels={selectedPanels}
               onSelectPanels={setSelectedPanels}
+              onGenerateMore={handleGenerateMore}
               styleName={selectedStyle?.title ?? ""}
               storyTitle={storyTitle}
               characterImage={characterImage}

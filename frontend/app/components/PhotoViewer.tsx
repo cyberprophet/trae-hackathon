@@ -6,8 +6,10 @@ import { Panel } from "../page";
 type Props = {
   panels: Panel[];
   isGenerating: boolean;
+  isGeneratingMore?: boolean;
   selectedPanels: number[];
   onSelectPanels: (panels: number[]) => void;
+  onGenerateMore?: () => void;
   styleName: string;
   storyTitle: string;
   characterImage?: string;
@@ -96,8 +98,10 @@ function LoadingState({ userStory }: { userStory?: string }) {
 export default function PhotoViewer({
   panels,
   isGenerating,
+  isGeneratingMore,
   selectedPanels,
   onSelectPanels,
+  onGenerateMore,
   styleName,
   storyTitle,
   characterImage,
@@ -476,9 +480,25 @@ export default function PhotoViewer({
           </div>
         )}
 
-        {panels.some((p) => p.status === "done") && (
-          <div className="multiselect-hint" style={{ paddingBottom: 16 }}>
-            더블클릭으로 확대 · Shift+클릭으로 다중 선택
+        {panels.some((p) => p.status === "done") && !isGenerating && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "16px 0" }}>
+            {onGenerateMore && (
+              <button
+                className="btn-cta"
+                onClick={onGenerateMore}
+                disabled={isGeneratingMore}
+                style={{
+                  padding: "10px 24px",
+                  fontSize: "13px",
+                  opacity: isGeneratingMore ? 0.6 : 1,
+                }}
+              >
+                {isGeneratingMore ? "생성 중..." : "+ 4장 더 생성"}
+              </button>
+            )}
+            <div className="multiselect-hint">
+              더블클릭으로 확대 · Shift+클릭으로 다중 선택
+            </div>
           </div>
         )}
       </div>

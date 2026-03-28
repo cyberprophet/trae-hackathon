@@ -90,7 +90,7 @@ Product description and brief:
 {user_story}"""
 
 
-def decompose_story(user_story: str, num_panels: int = 8, style: str = "studio") -> dict:
+def decompose_story(user_story: str, num_panels: int = 4, style: str = "studio") -> dict:
     """Analyze a product description and produce a structured photography shot list as JSON.
 
     Calls Gemini 3 Flash (low thinking) to act as a professional product photographer.
@@ -103,7 +103,7 @@ def decompose_story(user_story: str, num_panels: int = 8, style: str = "studio")
 
     Args:
         user_story: The user's product description and creative brief in free text. Any language.
-        num_panels: Target number of shots. Default 8 for a complete product visual library, minimum 4.
+        num_panels: Target number of shots. Default 4, minimum 4.
         style: Photography style ID (studio, lifestyle, flat-lay, cinematic).
 
     Returns:

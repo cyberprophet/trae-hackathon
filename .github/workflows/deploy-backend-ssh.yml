@@ -1,0 +1,48 @@
+name: Deploy Backend (SSH)
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            REPO_DIR="${{ secrets.BACKEND_REPO_DIR }}"
+
+            if [ -z "$REPO_DIR" ]; then
+              echo "Missing BACKEND_REPO_DIR secret (e.g. /opt/trae-hackathon)"
+              exit 1
+            fi
+
+            cd "$REPO_DIR"
+            git fetch --all --prune
+            git checkout main
+            git pull --ff-only origin main
+
+            cd backend
+            docker build -t shotcraft-backend:latest .
+
+            docker rm -f shotcraft-backend >/dev/null 2>&1 || true
+            docker run -d \
+              --name shotcraft-backend \
+              --restart unless-stopped \
+              --env-file .env \
+              -p 8000:8000 \
+              shotcraft-backend:latest

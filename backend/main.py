@@ -29,6 +29,7 @@ from mint_ai.tools.image_gen import (
     _get_session_dir,
 )
 from mint_ai.tools.panel_editor import edit_panel
+from mint_ai.tools.story_engine import decompose_story
 
 # ---------------------------------------------------------------------------
 # ADK runner — single instance, shared across all requests
@@ -544,6 +545,94 @@ async def generate(
         "storyboard_title": storyboard.get("title", ""),
         "panels": response_panels,
     }
+
+
+# ---------------------------------------------------------------------------
+# POST /generate/more  (add more shots to existing session)
+# ---------------------------------------------------------------------------
+class MoreRequest(BaseModel):
+    session_id: str
+    story: str
+    style: str = "studio"
+    face_description: str = ""
+    count: int = 4
+    existing_count: int = 0  # how many shots already exist
+
+
+@app.post("/generate/more")
+async def generate_more(req: MoreRequest):
+    """Generate additional product shots for an existing session."""
+    session_id = req.session_id
+    session_dir = _get_session_dir(session_id)
+    lang = _detect_language(req.story)
+    start_num = req.existing_count + 1
+
+    # 1. Decompose additional shots
+    result = await asyncio.to_thread(decompose_story, req.story, req.count, req.style)
+    if result.get("status") != "success":
+        raise HTTPException(status_code=500, detail=result.get("message", "Failed to create shot list"))
+
+    storyboard = result["storyboard"]
+    panels_meta = storyboard.get("panels", [])
+    characters_list = storyboard.get("characters", [])
+    characters = {c["name"]: c.get("face_description", "") for c in characters_list}
+    locations = {loc["id"]: loc.get("description", "") for loc in storyboard.get("locations", [])}
+
+    # Re-number panels to continue from existing
+    for i, pm in enumerate(panels_meta):
+        pm["panel_number"] = start_num + i
+
+    # Override face_description if provided
+    face_override = req.face_description
+
+    # 2. Generate all in parallel
+    async def gen_one(panel_meta: dict):
+        char_names = panel_meta.get("character_names", [])
+        if not char_names:
+            cn = panel_meta.get("character_name", "")
+            char_names = [cn] if cn else []
+
+        face_parts = [f"[{cn}] {characters.get(cn, '')}" for cn in char_names if characters.get(cn)]
+        face_desc = face_override or "\n".join(face_parts)
+
+        outfits_raw = panel_meta.get("outfits", {})
+        exprs_raw = panel_meta.get("character_expressions", {})
+        outfit = "; ".join(f"{k}: {v}" for k, v in outfits_raw.items()) if isinstance(outfits_raw, dict) and outfits_raw else ""
+        char_expr = "; ".join(f"{k}: {v}" for k, v in exprs_raw.items()) if isinstance(exprs_raw, dict) and exprs_raw else ""
+
+        scene_desc = panel_meta.get("scene_description", "")
+        loc_id = panel_meta.get("location_id", "")
+        if loc_id and loc_id in locations:
+            scene_desc = f"[Setting: {locations[loc_id]}] {scene_desc}"
+
+        r = await asyncio.to_thread(
+            _generate_single_panel,
+            panel_number=panel_meta["panel_number"],
+            scene_description=scene_desc,
+            face_description=face_desc,
+            outfit=outfit,
+            character_expression=char_expr,
+            camera_angle=panel_meta.get("camera_angle", "medium shot"),
+            mood=panel_meta.get("mood", ""),
+            dialogue=panel_meta.get("dialogue", ""),
+            dialogue_type=panel_meta.get("dialogue_type", "none"),
+            session_dir=session_dir,
+            session_id=session_id,
+            style=req.style,
+            language=lang,
+        )
+        return r, panel_meta
+
+    results = await asyncio.gather(*[gen_one(p) for p in panels_meta])
+
+    response_panels = []
+    for gen_result, meta in results:
+        panel_data = _build_panel_response(gen_result, meta, characters)
+        panel_data["session_id"] = session_id
+        response_panels.append(panel_data)
+
+    response_panels.sort(key=lambda p: p["panel_number"])
+    return {"session_id": session_id, "panels": response_panels}
 
 
 # ---------------------------------------------------------------------------

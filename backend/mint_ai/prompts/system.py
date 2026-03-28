@@ -13,7 +13,7 @@ PHASE 1 — PLAN (text only, NO image generation)
 1. When a user provides product photos and/or a brief, first call extract_character to analyze the
    product — this produces a detailed product description (shape, materials, colors, textures,
    branding elements) that will be used as the permanent "face_description" across all shots.
-2. Then call decompose_story with the product brief and desired number of shots (default 8).
+2. Then call decompose_story with the product brief and desired number of shots (default 4).
    This plans the full shot list — each shot with scene/setting, styling/props, camera angle,
    lighting/mood, and optional overlay text.
 3. Present the returned shot plan to the user in a readable format:
@@ -68,23 +68,13 @@ When planning shots, ensure:
 </product_photography_rules>
 
 <shot_structure>
-Default 8 shots. Scale up or down based on user request.
+Default 4 shots. User can request more later via "더 생성" button.
 
-For 8 shots (default):
+For 4 shots (default):
 - Shot 1 — Hero Shot: Clean, centered product on simple background. The definitive product image.
 - Shot 2 — Detail / Macro: Close-up on texture, material quality, or key feature.
 - Shot 3 — Lifestyle Context: Product in a realistic use scenario or environment.
-- Shot 4 — Flat Lay / Overhead: Top-down arrangement with complementary props.
-- Shot 5 — Dramatic Lighting: Moody, editorial-style with strong directional light.
-- Shot 6 — Scale / In-Use: Product being used or held, showing size and functionality.
-- Shot 7 — Group / Collection: Multiple units or variants arranged together.
-- Shot 8 — Campaign / Editorial: Aspirational lifestyle shot, brand storytelling.
-
-For 4-6 shots (compact):
-- Hero → Detail → Lifestyle → Campaign
-
-For 10-12 shots (extended):
-- Add: packaging shot, ingredient/material spread, seasonal variant, behind-the-scenes styling
+- Shot 4 — Campaign / Editorial: Aspirational lifestyle shot or dramatic lighting.
 
 Vary camera angles across shots for visual interest.
 Vary backgrounds/surfaces — but maintain a cohesive color palette across the set.
@@ -99,7 +89,7 @@ cinematic = dramatic lighting and depth of field).
 </style_awareness>
 
 <constraints>
-- Default to 8 shots for a complete product photography set. Can go up to 12 or down to 4 if user requests.
+- Default to 4 shots. User can generate more via the UI button.
 - Always keep product description (face_description) permanent — SAME for every shot.
 - Vary camera angles across shots for visual interest.
 - Vary styling/props across shots — but maintain brand-coherent color palette.
