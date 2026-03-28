@@ -1,6 +1,9 @@
 name: Deploy Backend (SSH)
 
 on:
+  push:
+    branches: [main]
+    paths: [backend/**]
   workflow_dispatch: {}
 
 permissions:
@@ -9,40 +12,82 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Deploy over SSH
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install --no-cache-dir -r requirements.txt
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Deploy via rsync
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
+          DEPLOY_PATH: ${{ secrets.SHOTCRAFT_DEPLOY_PATH }}
+        run: |
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key -p $DEPLOY_PORT -o StrictHostKeyChecking=no" \
+            --exclude '.env' \
+            --exclude 'output/' \
+            --exclude '__pycache__/' \
+            --exclude '.adk/' \
+            backend/ \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
+
+      - name: Restart service
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_SSH_PORT }}
           script_stop: true
           script: |
             set -euo pipefail
+            DEPLOY_PATH="${{ secrets.SHOTCRAFT_DEPLOY_PATH }}"
 
-            REPO_DIR="${{ secrets.BACKEND_REPO_DIR }}"
+            cd "$DEPLOY_PATH"
 
-            if [ -z "$REPO_DIR" ]; then
-              echo "Missing BACKEND_REPO_DIR secret (e.g. /opt/trae-hackathon)"
-              exit 1
+            # Install/update Python dependencies
+            if [ -f "requirements.txt" ]; then
+              pip install --no-cache-dir -r requirements.txt 2>/dev/null || \
+              python3 -m pip install --no-cache-dir -r requirements.txt
             fi
 
-            cd "$REPO_DIR"
-            git fetch --all --prune
-            git checkout main
-            git pull --ff-only origin main
+            # Create output directory
+            mkdir -p output
 
-            cd backend
-            docker build -t shotcraft-backend:latest .
+            # Restart systemd service
+            SERVICE_NAME="${{ secrets.SHOTCRAFT_SERVICE_NAME }}"
+            SERVICE_NAME="${SERVICE_NAME:-shotcraft-backend}"
 
-            docker rm -f shotcraft-backend >/dev/null 2>&1 || true
-            docker run -d \
-              --name shotcraft-backend \
-              --restart unless-stopped \
-              --env-file .env \
-              -p 8000:8000 \
-              shotcraft-backend:latest
+            if sudo -n systemctl restart "$SERVICE_NAME" 2>/dev/null; then
+              echo "Service $SERVICE_NAME restarted (sudoless)"
+            elif [ -n "${{ secrets.DEPLOY_SUDO_PASSWORD }}" ]; then
+              echo "${{ secrets.DEPLOY_SUDO_PASSWORD }}" | sudo -S systemctl restart "$SERVICE_NAME"
+              echo "Service $SERVICE_NAME restarted (with sudo password)"
+            else
+              systemctl --user restart "$SERVICE_NAME" 2>/dev/null || \
+                echo "Warning: Could not restart service $SERVICE_NAME"
+            fi
+
+            echo "Deploy complete: $(date)"
