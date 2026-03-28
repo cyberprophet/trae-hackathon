@@ -38,9 +38,9 @@ frontend/.env.local
 
 # Root node_modules (pptxgenjs install)
 node_modules/
-package.json
-package-lock.json
-yarn.lock
+/package.json
+/package-lock.json
+/yarn.lock
 
 # Pitch deck generator (keep .pptx, ignore .js build script)
 pitch-deck/pitch-deck.js
