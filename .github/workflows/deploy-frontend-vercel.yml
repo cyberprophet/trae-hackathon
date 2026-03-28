@@ -31,26 +31,8 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install deps
-        working-directory: frontend
-        run: npm install --no-audit --no-fund
-
-      - name: Lint
-        working-directory: frontend
-        run: npm run lint
-
-      - name: Build
-        working-directory: frontend
-        run: npm run build
-
       - name: Install Vercel CLI
         run: npm i -g vercel@latest
 
-      - name: Pull Vercel environment
-        run: vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
-
-      - name: Build (Vercel)
-        run: vercel build --prod --token "$VERCEL_TOKEN"
-
-      - name: Deploy (Vercel)
-        run: vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN"
+      - name: Deploy to Production
+        run: vercel deploy --prod --token "$VERCEL_TOKEN"
