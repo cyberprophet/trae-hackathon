@@ -53,5 +53,8 @@ pitch-deck/pitch-deck.js
 *.png
 !pitch-deck/*.png
 
+# Deploy scripts (contain server credentials)
+deploy.sh
+
 # Lock files
 uv.lock
